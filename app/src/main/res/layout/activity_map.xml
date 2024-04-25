@@ -9,7 +9,9 @@
     <org.osmdroid.views.MapView
             android:id="@+id/osmmap"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"/>
+            android:layout_height="wrap_content"
+            android:background="@android:color/transparent"
+    />
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
             android:id="@+id/btnCenterMap"
