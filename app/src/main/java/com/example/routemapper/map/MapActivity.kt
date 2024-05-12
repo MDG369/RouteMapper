@@ -1,288 +1,296 @@
 package com.example.routemapper.map
 import android.Manifest
-import android.app.ProgressDialog
 import android.content.pm.PackageManager
-import android.graphics.Rect
-import android.location.GpsStatus
-import android.location.Location
-import android.util.Log
-
-import android.os.Bundle
-import android.widget.Toast
-import androidx.activity.compose.setContent
-import androidx.activity.viewModels
-import com.google.android.material.snackbar.Snackbar
 import androidx.appcompat.app.AppCompatActivity
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
+import android.os.Bundle
+import android.util.Log
+import android.widget.Button
+import android.widget.Toast
+import androidx.activity.viewModels
 import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.findNavController
-import androidx.navigation.ui.AppBarConfiguration
-import androidx.navigation.ui.navigateUp
-import androidx.navigation.ui.setupActionBarWithNavController
 import com.example.routemapper.*
 import com.example.routemapper.databinding.ActivityMapBinding
 import com.example.routemapper.services.WebClient
-import com.example.routemapper.ui.theme.RouteMapperTheme
-import okhttp3.Response
-
-import org.osmdroid.api.IMapController
-import org.osmdroid.config.Configuration
-import org.osmdroid.events.MapListener
-import org.osmdroid.events.ScrollEvent
-import org.osmdroid.events.ZoomEvent
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
-import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
-
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.GoogleMap
+import com.google.android.gms.maps.SupportMapFragment
+import com.google.android.gms.maps.OnMapReadyCallback
+import com.google.android.gms.maps.model.*
+import com.google.android.material.floatingactionbutton.FloatingActionButton
+import com.google.android.material.snackbar.Snackbar
+import kotlin.math.cos
+import kotlin.math.sin
 
 
-class MapActivity : AppCompatActivity(), MapListener, GpsStatus.Listener {
+class MapActivity : AppCompatActivity(), OnMapReadyCallback {
 
-    lateinit var mMap: MapView
-    lateinit var controller: IMapController;
-    lateinit var mMyLocationOverlay: MyLocationNewOverlay;
-    private val LOCATION_PERMISSION_REQUEST_CODE = 1
-    private val mapperViewModel by viewModels<MapperViewModel>();
+    private lateinit var mMap: GoogleMap
+    private var userMarker: Marker? = null
+    private var userLocation: LatLng? = null
     private val webClient = WebClient();
-    private var userId = 0;
+    private val mapperViewModel by viewModels<MapperViewModel>();
+    private var userId: Int = 0;
+    private var polyline: Polyline? = null
+    private var polylines: ArrayList<Polyline> = ArrayList()
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private val DEFAULT_ZOOM: Float = 20.0F;
+    private var localizationStarted: Boolean = false;
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val binding = ActivityMapBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-        Configuration.getInstance().load(
-            applicationContext,
-            getSharedPreferences(getString(R.string.app_name), MODE_PRIVATE)
-        )
+        setContentView(R.layout.activity_map)
 
-        mMap = binding.osmmap
-        mMap.setTileSource(TileSourceFactory.MAPNIK)
-        mMap.mapCenter
-        mMap.setMultiTouchControls(true)
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
-        mMyLocationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(this), mMap)
-        controller = mMap.controller
 
-        mMyLocationOverlay.enableMyLocation()
-        mMyLocationOverlay.enableFollowLocation()
-        mMyLocationOverlay.isDrawAccuracyEnabled = true
-        mMyLocationOverlay.runOnFirstFix {
-            runOnUiThread {
-                controller.setCenter(mMyLocationOverlay.myLocation)
-                controller.animateTo(mMyLocationOverlay.myLocation)
-            }
-        }
-
-        controller.setZoom(6.0)
-        mMap.overlays.add(mMyLocationOverlay)
-        mMap.addMapListener(this)
-
-        // Find the FloatingActionButton and set OnClickListener
-        binding.btnCenterMap.setOnClickListener {
-            val userLocation = mMyLocationOverlay.myLocation
-            this.userId = registerUser(userLocation.latitude, userLocation.longitude)?: 0;
-        }
-
-        checkLocationPermission() // Check location permission when activity starts
+        // Obtain the SupportMapFragment and get notified when the map is ready to be used.
+        val mapFragment = supportFragmentManager.findFragmentById(R.id.map) as SupportMapFragment
+        mapFragment.getMapAsync(this)
         initStepCounter();
-//        setContent {
-//            RouteMapperTheme {
-//                // A surface container using the 'background' color from the theme
-//                Surface(
-//                    modifier = Modifier.fillMaxSize(),
-//                ) {
-//
-//
-//                    Greeting(mapperViewModel, mMyLocationOverlay, mMap)
-//                }
-//            }
-//        }
+
     }
 
-        private fun initStepCounter() {
-            val stepSensorDetector = StepSensorDetector(this@MapActivity)
-            val rotationSensorDetector = RotationSensorDetector(this@MapActivity)
+    override fun onMapReady(googleMap: GoogleMap) {
+        mMap = googleMap
 
-            val availableStepDetector = stepSensorDetector.registerListener(object : StepListener {
-                override fun onStep(count: Int) {
+        // Check if permission is granted
+        if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            mMap.isMyLocationEnabled = true
+        } else {
+            // Request permission
+            requestPermissions(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION), LOCATION_PERMISSION_REQUEST_CODE)
+        }
+
+        // Add a marker in a location and move the camera
+        getLastKnownLocation()
+
+
+
+        // Set onClickListener for the button
+        val btnCenterMap = findViewById<FloatingActionButton>(R.id.btnCenterMap)
+        btnCenterMap.setOnClickListener {
+            // Check if userLocation is not null
+            if (!localizationStarted) {
+                userLocation?.let { location ->
+                    // Send the latitude and longitude to the server
+                    registerUser(location.latitude, location.longitude)!!;
+                    Log.e("TAG", userId.toString());
+
+                    btnCenterMap.setImageResource(R.drawable.ic_stop_button)
+                    mMap.setOnMapClickListener(null);
+                    mMap.setOnMyLocationButtonClickListener(null)
+
+                    localizationStarted = true;
+                }
+            } else {
+                stopLocalization(userId);
+                btnCenterMap.setImageResource(R.drawable.ic_baseline_my_location_24)
+                userMarker?.remove()
+                userLocation = null
+                val iterator = polylines.iterator()
+                while (iterator.hasNext()) {
+                    val polyline = iterator.next()
+                    polyline.remove()
+                    iterator.remove()
+                }
+                setMapListeners(btnCenterMap)
+                localizationStarted = false;
+            }
+        }
+        btnCenterMap.isEnabled = false
+        setMapListeners(btnCenterMap)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            // Permission granted, enable location
+            if (ActivityCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.ACCESS_FINE_LOCATION
+                ) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                return
+            }
+            mMap.isMyLocationEnabled = true
+        } else {
+            Toast.makeText(this, "Location permission denied", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun setMapListeners(btnCenterMap: FloatingActionButton) {
+        mMap.setOnMapClickListener { latLng ->
+            // Remove previous marker if exists
+            userMarker?.remove()
+            // Add a new marker at the clicked position
+            userMarker = mMap.addMarker(MarkerOptions().position(latLng).title("Twoja lokalizacja"))
+            // Set Lat lng to send
+            userLocation = latLng
+            btnCenterMap.isEnabled = true
+
+        }
+        mMap.setOnMyLocationButtonClickListener {
+            // Clear previous marker if exists
+            userMarker?.remove()
+
+            // Get user's current location
+            val location = mMap.myLocation
+            if (location != null) {
+                val latLng = LatLng(location.latitude, location.longitude)
+                // Add a marker at the user's current location
+                userMarker = mMap.addMarker(MarkerOptions().position(latLng).title("Twoja lokalizacja"))
+                // Optionally, move camera to the user's location
+                mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 20f))
+                userLocation = latLng
+
+                btnCenterMap.isEnabled = true
+
+            } else {
+                // Handle case where user location is not available
+                Toast.makeText(this, "Unable to retrieve your location", Toast.LENGTH_SHORT).show()
+            }
+
+            // Return true to indicate that the listener has consumed the event
+            true
+        }
+    }
+
+    private fun initStepCounter() {
+        val stepSensorDetector = StepSensorDetector(this@MapActivity)
+        val rotationSensorDetector = RotationSensorDetector(this@MapActivity)
+
+        val availableStepDetector = stepSensorDetector.registerListener(object : StepListener {
+            override fun onStep(count: Int) {
+                if (localizationStarted) {
                     val lastHeading = rotationSensorDetector.getLastHeading();
                     stepSensorDetector.saveStepToFile(0, lastHeading)
+                    val newLocation = getNewLocationFromHeading(lastHeading, 0.5);
                     postStep(userId, lastHeading)
+                    drawPolyline(userLocation!!, newLocation)
                     mapperViewModel.incrementCounter(count)
+                    userLocation = newLocation;
+                }
+            }
+        })
+        print("Available step d: $availableStepDetector");
+
+
+        val availableRotationDetector =
+            rotationSensorDetector.registerListener(object : RotationListener {
+                override fun onRotation(rotation: Float) {
+                    mapperViewModel.setRotation(rotation)
                 }
             })
-            print("Available step d: $availableStepDetector");
 
+        var error = ""
 
-            val availableRorationDetector =
-                rotationSensorDetector.registerListener(object : RotationListener {
-                    override fun onRotation(rotation: Float) {
-                        mapperViewModel.setRotation(rotation)
-                    }
-                })
+        if (!availableStepDetector) {
+            if (error.isNotEmpty()) {
+                error += "\n\n"
+                mapperViewModel.setMsg(error)
 
-            var error = ""
-
-            if (!availableStepDetector) {
-                if (error.isNotEmpty()) {
-                    error += "\n\n"
-                    mapperViewModel.setMsg(error)
-
-                    Log.i("Main", error)
-                } else {
-                    mapperViewModel.setMsg("not available")
-                }
+                Log.i("Main", error)
             } else {
-                mapperViewModel.setMsg("initialized successful")
+                mapperViewModel.setMsg("not available")
             }
+        } else {
+            mapperViewModel.setMsg("initialized successful")
         }
+    }
 
-        private fun centerMapToUserLocation() {
-            val userLocation = mMyLocationOverlay.myLocation
-            if (userLocation != null) {
-                controller.animateTo(userLocation)
-            } else {
-                Snackbar.make(
-                    mMap,
-                    "Unable to get current location. Make sure location permissions are granted.",
-                    Snackbar.LENGTH_SHORT
-                ).show()
-            }
-        }
 
-        private fun fetchData() {
-            webClient.fetchData { response ->
-                Log.e("TAG", "onResponse:la ${response}");
-                Snackbar.make(
-                    mMap,
-                    response.toString(),
-                    Snackbar.LENGTH_SHORT
-                ).show()
-                runOnUiThread {
-                    Toast.makeText(this, response ?: "Failed to fetch data", Toast.LENGTH_SHORT).show()
-                }
+    private fun fetchData() {
+        webClient.fetchData { response ->
+            Log.e("TAG", "onResponse:la ${response}");
+            runOnUiThread {
+                Toast.makeText(this, response ?: "Failed to fetch data", Toast.LENGTH_SHORT).show()
             }
         }
-        private fun registerUser(lat: Double, long: Double): Int? {
-            var res: Int? = 0
-            webClient.registerUser(lat, long) { response ->
-                Log.e("TAG", "onResponse:la ${response}");
-                Snackbar.make(
-                    mMap,
-                    response.toString(),
-                    Snackbar.LENGTH_SHORT
-                ).show()
-                res = response
+    }
+    private fun registerUser(lat: Double, long: Double): Int? {
+        var res: Int? = 0
+        webClient.registerUser(lat, long) { response ->
+            Log.e("TAG", "onResponse:la ${response}");
+            runOnUiThread {
+                Toast.makeText(this, response.toString() ?: "Failed to register the user", Toast.LENGTH_SHORT).show()
             }
-            return res;
+            res = response
+            userId = response!!;
         }
+        return res;
+    }
 
     private fun postStep(userId: Int, heading: Double) {
         var res: Int? = 0
+        Log.e("uid", userId.toString());
         webClient.postStep(userId, heading) { response ->
-            Log.e("TAG", "onResponse:la ${response}");
-            Snackbar.make(
-                mMap,
-                response.toString(),
-                Snackbar.LENGTH_SHORT
-            ).show()
+//            Log.e("TAG", "onResponse:la ${response}");
+//            runOnUiThread {
+//                Toast.makeText(this, response ?: "Failed to send the step", Toast.LENGTH_SHORT).show()
+//            }
         }
     }
 
-        override fun onScroll(event: ScrollEvent?): Boolean {
-            // event?.source?.getMapCenter()
-//            Log.e("TAG", "onCreate:la ${event?.source?.getMapCenter()?.latitude}")
-//            Log.e("TAG", "onCreate:lo ${event?.source?.getMapCenter()?.longitude}")
-            //  Log.e("TAG", "onScroll   x: ${event?.x}  y: ${event?.y}", )
-            return true
-        }
+    private fun stopLocalization(userId: Int) {
 
-        override fun onZoom(event: ZoomEvent?): Boolean {
-            //  event?.zoomLevel?.let { controller.setZoom(it) }
+    }
 
+    private fun drawPolyline(previousLocation: LatLng, location: LatLng) {
+        // Create a PolylineOptions object and add the current and previous locations
+        val polylineOptions = PolylineOptions()
+            .add(previousLocation) // Replace previousLocation with the actual LatLng of the previous location
+            .add(location)
 
-            Log.e("TAG", "onZoom zoom level: ${event?.zoomLevel}   source:  ${event?.source}")
-            return false;
-        }
+        // Add polyline to the map
+        polyline = mMap.addPolyline(polylineOptions)
+        polylines.add(polyline!!)
+    }
 
-        override fun onGpsStatusChanged(event: Int) {
+    private fun getNewLocationFromHeading(heading: Double, distance: Double): LatLng {
+        // Earth's radius in meters
+        val earthRadius = 6378137; // Approximate value for WGS84 ellipsoid
 
+        // Convert heading to Cartesian coordinates
+        val dx = cos(heading) * distance;
+        val dy = sin(heading) * distance;
 
-            TODO("Not yet implemented")
-        }
+        // Convert offset in meters to offset in degrees (longitude and latitude)
+        val deltaLongitude = dx / (earthRadius * cos(this.userLocation!!.latitude * Math.PI / 180)) * (180 / Math.PI);
+        val deltaLatitude = dy / earthRadius * (180 / Math.PI);
 
-        private fun checkLocationPermission() {
-            if (ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.ACCESS_FINE_LOCATION
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                // Permission is not granted
-                ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(
-                        Manifest.permission.ACCESS_FINE_LOCATION,
-                        Manifest.permission.ACCESS_COARSE_LOCATION
-                    ),
-                    LOCATION_PERMISSION_REQUEST_CODE
-                )
-            }
+        val newLatitude = this.userLocation!!.latitude + deltaLatitude;
+        val newLongitude = this.userLocation!!.longitude + deltaLongitude;
+
+        return LatLng(newLatitude, newLongitude);
+    }
+
+    private fun getLastKnownLocation() {
+        // Check if permission is granted
+        if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            // Retrieve the last known location
+            fusedLocationClient.lastLocation
+                .addOnSuccessListener { location ->
+                    // Move the camera to the last known location if available
+                    if (location != null) {
+                        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(location.latitude, location.longitude), DEFAULT_ZOOM))
+                    }
+                }
+                .addOnFailureListener { e ->
+                    Toast.makeText(this, "Failed to get last known location: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+        } else {
+            // Request permission
+            requestPermissions(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION), LOCATION_PERMISSION_REQUEST_CODE)
         }
     }
 
-    @Composable
-    fun Greeting(
-        mainViewModel: MapperViewModel = viewModel(),
-        mMyLocationOverlay: MyLocationNewOverlay,
-        mMap: MapView
-    ) {
-        AndroidView({ context ->
-            MapView(context).apply {
-                id = R.id.osmmap
-                setTileSource(TileSourceFactory.MAPNIK)
-                mapCenter
-                setMultiTouchControls(true)
-                controller.setZoom(6.0)
-                mMap.overlays.add(mMyLocationOverlay)
-            }
-        }) { mapView ->
-            // MapView is a child of the Box
-            mapView
-        }
-        Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = 20.dp)
-        ) {
-
-            val drawable = LineDrawable(mainViewModel.points.toList())
-
-            drawIntoCanvas { canvas ->
-                drawable.setBounds(0, 0, size.width.toInt(), size.height.toInt())
-                drawable.draw(canvas.nativeCanvas)
-            }
-            // Draw map here
-
-        }
-
-        Text(
-            text = mainViewModel.msg.value
-        )
+    companion object {
+        private const val LOCATION_PERMISSION_REQUEST_CODE = 1
     }
-
+}
