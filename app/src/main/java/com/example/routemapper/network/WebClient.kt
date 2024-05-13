@@ -1,32 +1,13 @@
-package com.example.routemapper.services
+package com.example.routemapper.network
 
 import android.util.Log
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONObject
 import java.io.IOException
 
 class WebClient {
     private var url: String = "http://192.168.1.49:8080/"
-    fun fetchData(callback: (String?) -> Unit) {
-        val client = OkHttpClient()
-        val request = Request.Builder()
-            .url(url)
-            .build()
-
-        client.newCall(request).enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) {
-                Log.e("WebClient", "Problem fetching data", e)
-                callback(null)
-            }
-
-            override fun onResponse(call: Call, response: Response) {
-                val responseBody = response.body?.string()
-                callback(responseBody)
-            }
-        })
-    }
 
     fun registerUser(lat: Double, long: Double, callback: (Int?) -> Unit) {
         val client = OkHttpClient()

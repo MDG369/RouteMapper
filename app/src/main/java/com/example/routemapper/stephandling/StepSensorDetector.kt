@@ -1,17 +1,14 @@
-package com.example.routemapper
+package com.example.routemapper.stephandling
 
 import android.app.Activity
 import android.content.Context
 import android.content.Context.MODE_APPEND
-import android.content.Context.MODE_PRIVATE
 import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Build
-import android.util.Log
-import android.widget.Toast
 import androidx.core.app.ActivityCompat
 import java.io.FileOutputStream
 import java.io.OutputStreamWriter
@@ -50,9 +47,6 @@ class StepSensorDetector constructor(
                 /* samplingPeriodUs = */ SensorManager.SENSOR_DELAY_FASTEST,
             ) ?: false
         }
-
-
-
         return false
     }
 

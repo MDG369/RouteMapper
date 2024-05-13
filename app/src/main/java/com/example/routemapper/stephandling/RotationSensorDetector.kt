@@ -1,11 +1,10 @@
-package com.example.routemapper
+package com.example.routemapper.stephandling
 
 import android.content.Context
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.util.Log
 
 class RotationSensorDetector constructor(
     private val context: Context,

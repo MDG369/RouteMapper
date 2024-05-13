@@ -4,13 +4,12 @@ import android.content.pm.PackageManager
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.util.Log
-import android.widget.Button
 import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.core.app.ActivityCompat
 import com.example.routemapper.*
-import com.example.routemapper.databinding.ActivityMapBinding
-import com.example.routemapper.services.WebClient
+import com.example.routemapper.network.WebClient
+import com.example.routemapper.stephandling.*
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -19,7 +18,6 @@ import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.model.*
 import com.google.android.material.floatingactionbutton.FloatingActionButton
-import com.google.android.material.snackbar.Snackbar
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -29,14 +27,14 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var mMap: GoogleMap
     private var userMarker: Marker? = null
     private var userLocation: LatLng? = null
-    private val webClient = WebClient();
-    private val mapperViewModel by viewModels<MapperViewModel>();
-    private var userId: Int = 0;
+    private val webClient = WebClient()
+    private val mapperViewModel by viewModels<MapperViewModel>()
+    private var userId: Int = 0
     private var polyline: Polyline? = null
     private var polylines: ArrayList<Polyline> = ArrayList()
     private lateinit var fusedLocationClient: FusedLocationProviderClient
-    private val DEFAULT_ZOOM: Float = 20.0F;
-    private var localizationStarted: Boolean = false;
+    private val DEFAULT_ZOOM: Float = 20.0F
+    private var localizationStarted: Boolean = false
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -44,7 +42,6 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback {
         setContentView(R.layout.activity_map)
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-
 
         // Obtain the SupportMapFragment and get notified when the map is ready to be used.
         val mapFragment = supportFragmentManager.findFragmentById(R.id.map) as SupportMapFragment
@@ -87,7 +84,7 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback {
                 }
             } else {
                 stopLocalization(userId);
-                btnCenterMap.setImageResource(R.drawable.ic_baseline_my_location_24)
+                btnCenterMap.setImageResource(R.drawable.ic_start_button)
                 userMarker?.remove()
                 userLocation = null
                 val iterator = polylines.iterator()
@@ -141,20 +138,14 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback {
 
             // Get user's current location
             val location = mMap.myLocation
-            if (location != null) {
-                val latLng = LatLng(location.latitude, location.longitude)
-                // Add a marker at the user's current location
-                userMarker = mMap.addMarker(MarkerOptions().position(latLng).title("Twoja lokalizacja"))
-                // Optionally, move camera to the user's location
-                mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 20f))
-                userLocation = latLng
+            val latLng = LatLng(location.latitude, location.longitude)
+            // Add a marker at the user's current location
+            userMarker = mMap.addMarker(MarkerOptions().position(latLng).title("Twoja lokalizacja"))
+            // Optionally, move camera to the user's location
+            mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 20f))
+            userLocation = latLng
 
-                btnCenterMap.isEnabled = true
-
-            } else {
-                // Handle case where user location is not available
-                Toast.makeText(this, "Unable to retrieve your location", Toast.LENGTH_SHORT).show()
-            }
+            btnCenterMap.isEnabled = true
 
             // Return true to indicate that the listener has consumed the event
             true
@@ -181,12 +172,11 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback {
         print("Available step d: $availableStepDetector");
 
 
-        val availableRotationDetector =
-            rotationSensorDetector.registerListener(object : RotationListener {
-                override fun onRotation(rotation: Float) {
-                    mapperViewModel.setRotation(rotation)
-                }
-            })
+        rotationSensorDetector.registerListener(object : RotationListener {
+            override fun onRotation(rotation: Float) {
+                mapperViewModel.setRotation(rotation)
+            }
+        })
 
         var error = ""
 
@@ -204,15 +194,6 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback {
         }
     }
 
-
-    private fun fetchData() {
-        webClient.fetchData { response ->
-            Log.e("TAG", "onResponse:la ${response}");
-            runOnUiThread {
-                Toast.makeText(this, response ?: "Failed to fetch data", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
     private fun registerUser(lat: Double, long: Double): Int? {
         var res: Int? = 0
         webClient.registerUser(lat, long) { response ->
@@ -227,14 +208,7 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     private fun postStep(userId: Int, heading: Double) {
-        var res: Int? = 0
-        Log.e("uid", userId.toString());
-        webClient.postStep(userId, heading) { response ->
-//            Log.e("TAG", "onResponse:la ${response}");
-//            runOnUiThread {
-//                Toast.makeText(this, response ?: "Failed to send the step", Toast.LENGTH_SHORT).show()
-//            }
-        }
+        webClient.postStep(userId, heading) { }
     }
 
     private fun stopLocalization(userId: Int) {
