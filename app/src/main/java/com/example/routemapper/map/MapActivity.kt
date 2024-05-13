@@ -46,44 +46,38 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback {
         // Obtain the SupportMapFragment and get notified when the map is ready to be used.
         val mapFragment = supportFragmentManager.findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
-        initStepCounter();
+        initStepCounter()
 
     }
 
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
 
-        // Check if permission is granted
         if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             mMap.isMyLocationEnabled = true
         } else {
-            // Request permission
             requestPermissions(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION), LOCATION_PERMISSION_REQUEST_CODE)
         }
 
-        // Add a marker in a location and move the camera
         getLastKnownLocation()
-
-
 
         // Set onClickListener for the button
         val btnCenterMap = findViewById<FloatingActionButton>(R.id.btnCenterMap)
         btnCenterMap.setOnClickListener {
-            // Check if userLocation is not null
             if (!localizationStarted) {
                 userLocation?.let { location ->
                     // Send the latitude and longitude to the server
-                    registerUser(location.latitude, location.longitude)!!;
-                    Log.e("TAG", userId.toString());
+                    registerUser(location.latitude, location.longitude)!!
+                    Log.e("TAG", userId.toString())
 
                     btnCenterMap.setImageResource(R.drawable.ic_stop_button)
-                    mMap.setOnMapClickListener(null);
+                    mMap.setOnMapClickListener(null)
                     mMap.setOnMyLocationButtonClickListener(null)
 
-                    localizationStarted = true;
+                    localizationStarted = true
                 }
             } else {
-                stopLocalization(userId);
+                stopLocalization(userId)
                 btnCenterMap.setImageResource(R.drawable.ic_start_button)
                 userMarker?.remove()
                 userLocation = null
@@ -94,7 +88,7 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback {
                     iterator.remove()
                 }
                 setMapListeners(btnCenterMap)
-                localizationStarted = false;
+                localizationStarted = false
             }
         }
         btnCenterMap.isEnabled = false
@@ -123,14 +117,10 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private fun setMapListeners(btnCenterMap: FloatingActionButton) {
         mMap.setOnMapClickListener { latLng ->
-            // Remove previous marker if exists
             userMarker?.remove()
-            // Add a new marker at the clicked position
             userMarker = mMap.addMarker(MarkerOptions().position(latLng).title("Twoja lokalizacja"))
-            // Set Lat lng to send
             userLocation = latLng
             btnCenterMap.isEnabled = true
-
         }
         mMap.setOnMyLocationButtonClickListener {
             if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
@@ -164,7 +154,7 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback {
                     postStep(userId, lastHeading)
                     drawPolyline(userLocation!!, newLocation)
                     mapperViewModel.incrementCounter(count)
-                    userLocation = newLocation;
+                    userLocation = newLocation
                 }
             }
         })
@@ -193,14 +183,14 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback {
     private fun registerUser(lat: Double, long: Double): Int? {
         var res: Int? = 0
         webClient.registerUser(lat, long) { response ->
-            Log.e("TAG", "onResponse:la ${response}");
+            Log.e("TAG", "onResponse:la ${response}")
             runOnUiThread {
                 Toast.makeText(this, response.toString() ?: "Failed to register the user", Toast.LENGTH_SHORT).show()
             }
             res = response
-            userId = response!!;
+            userId = response!!
         }
-        return res;
+        return res
     }
 
     private fun postStep(userId: Int, heading: Double) {
@@ -214,34 +204,32 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback {
     private fun drawPolyline(previousLocation: LatLng, location: LatLng) {
         // Create a PolylineOptions object and add the current and previous locations
         val polylineOptions = PolylineOptions()
-            .add(previousLocation) // Replace previousLocation with the actual LatLng of the previous location
+            .add(previousLocation)
             .add(location)
 
-        // Add polyline to the map
         polyline = mMap.addPolyline(polylineOptions)
         polylines.add(polyline!!)
     }
 
     private fun getNewLocationFromHeading(heading: Double, distance: Double): LatLng {
         // Earth's radius in meters
-        val earthRadius = 6378137; // Approximate value for WGS84 ellipsoid
+        val earthRadius = 6378137 // Approximate value for WGS84 ellipsoid
 
         // Convert heading to Cartesian coordinates
-        val dx = cos(heading) * distance;
-        val dy = sin(heading) * distance;
+        val dx = cos(heading) * distance
+        val dy = sin(heading) * distance
 
         // Convert offset in meters to offset in degrees (longitude and latitude)
         val deltaLongitude = dx / (earthRadius * cos(this.userLocation!!.latitude * Math.PI / 180)) * (180 / Math.PI);
-        val deltaLatitude = dy / earthRadius * (180 / Math.PI);
+        val deltaLatitude = dy / earthRadius * (180 / Math.PI)
 
-        val newLatitude = this.userLocation!!.latitude + deltaLatitude;
-        val newLongitude = this.userLocation!!.longitude + deltaLongitude;
+        val newLatitude = this.userLocation!!.latitude + deltaLatitude
+        val newLongitude = this.userLocation!!.longitude + deltaLongitude
 
-        return LatLng(newLatitude, newLongitude);
+        return LatLng(newLatitude, newLongitude)
     }
 
     private fun getLastKnownLocation() {
-        // Check if permission is granted
         if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             // Retrieve the last known location
             fusedLocationClient.lastLocation
@@ -255,7 +243,6 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback {
                     Toast.makeText(this, "Failed to get last known location: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
         } else {
-            // Request permission
             requestPermissions(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION), LOCATION_PERMISSION_REQUEST_CODE)
         }
     }
