@@ -133,21 +133,20 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback {
 
         }
         mMap.setOnMyLocationButtonClickListener {
-            // Clear previous marker if exists
-            userMarker?.remove()
+            if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                userMarker?.remove()
 
-            // Get user's current location
-            val location = mMap.myLocation
-            val latLng = LatLng(location.latitude, location.longitude)
-            // Add a marker at the user's current location
-            userMarker = mMap.addMarker(MarkerOptions().position(latLng).title("Twoja lokalizacja"))
-            // Optionally, move camera to the user's location
-            mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 20f))
-            userLocation = latLng
+                fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                    if (location != null) {
+                        val latLng = LatLng(location.latitude, location.longitude)
+                        userMarker = mMap.addMarker(MarkerOptions().position(latLng).title("Twoja lokalizacja"))
+                        mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 20f))
+                        userLocation = latLng
 
-            btnCenterMap.isEnabled = true
-
-            // Return true to indicate that the listener has consumed the event
+                        btnCenterMap.isEnabled = true
+                    }
+                }
+            }
             true
         }
     }
@@ -159,9 +158,9 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback {
         val availableStepDetector = stepSensorDetector.registerListener(object : StepListener {
             override fun onStep(count: Int) {
                 if (localizationStarted) {
-                    val lastHeading = rotationSensorDetector.getLastHeading();
-                    stepSensorDetector.saveStepToFile(0, lastHeading)
-                    val newLocation = getNewLocationFromHeading(lastHeading, 0.5);
+                    val lastHeading = rotationSensorDetector.getLastHeading()
+//                    stepSensorDetector.saveStepToFile(0, lastHeading)
+                    val newLocation = getNewLocationFromHeading(lastHeading, 0.5)
                     postStep(userId, lastHeading)
                     drawPolyline(userLocation!!, newLocation)
                     mapperViewModel.incrementCounter(count)
@@ -169,9 +168,6 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback {
                 }
             }
         })
-        print("Available step d: $availableStepDetector");
-
-
         rotationSensorDetector.registerListener(object : RotationListener {
             override fun onRotation(rotation: Float) {
                 mapperViewModel.setRotation(rotation)

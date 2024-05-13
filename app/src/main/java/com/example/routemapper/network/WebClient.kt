@@ -41,6 +41,9 @@ class WebClient {
     }
 
     fun postStep(userId: Int, heading: Double, callback: (String?) -> Unit) {
+        /***
+         * Send heading to the server
+         */
         val client = OkHttpClient()
         val jsonBody = """
             {
