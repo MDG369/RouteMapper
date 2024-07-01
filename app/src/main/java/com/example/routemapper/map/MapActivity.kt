@@ -1,4 +1,5 @@
 package com.example.routemapper.map
+import ServerConfigDialogFragment
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.appcompat.app.AppCompatActivity
@@ -22,7 +23,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 
-class MapActivity : AppCompatActivity(), OnMapReadyCallback {
+class MapActivity : AppCompatActivity(), OnMapReadyCallback,  ServerConfigDialogFragment.ServerConfigListener {
 
     private lateinit var mMap: GoogleMap
     private var userMarker: Marker? = null
@@ -43,12 +44,18 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback {
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
-        // Obtain the SupportMapFragment and get notified when the map is ready to be used.
         val mapFragment = supportFragmentManager.findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
-        initStepCounter()
 
+        showServerConfigDialog()
+        initStepCounter()
     }
+
+    private fun showServerConfigDialog() {
+        val dialogFragment = ServerConfigDialogFragment()
+        dialogFragment.show(supportFragmentManager, "serverConfigDialog")
+    }
+
 
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
@@ -245,6 +252,15 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback {
         } else {
             requestPermissions(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION), LOCATION_PERMISSION_REQUEST_CODE)
         }
+    }
+    override fun onServerConfigInput(ip: String, port: String) {
+        val sharedPreferences = getSharedPreferences("ServerPrefs", MODE_PRIVATE)
+        val editor = sharedPreferences.edit()
+        editor.putString("IP", ip)
+        editor.putString("Port", port)
+        editor.apply()
+        webClient.ip = ip;
+        webClient.port = port
     }
 
     companion object {

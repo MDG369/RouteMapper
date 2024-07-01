@@ -20,8 +20,7 @@
             android:theme="@style/Theme.RouteMapper"
             android:usesCleartextTraffic="true"
             tools:targetApi="31">
-        <!-- The meta-data tag has to be present in order for google maps to work,
-         but a correct key is not needed. -->
+
         <meta-data
                 android:name="com.google.android.geo.API_KEY"
                 android:value="key"/>

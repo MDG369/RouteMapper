@@ -7,8 +7,9 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 
 class WebClient {
-    private var url: String = "http://192.168.1.49:8080/"
 
+    var ip: String = "192.168.1.49"
+    var port: String = "8080";
     fun registerUser(lat: Double, long: Double, callback: (Int?) -> Unit) {
         val client = OkHttpClient()
         val jsonBody = """
@@ -19,7 +20,8 @@ class WebClient {
         """.trimIndent()
         val requestBody = jsonBody.toRequestBody("application/json".toMediaTypeOrNull())
         val request = Request.Builder()
-            .url(url + "register")
+            .url("http://$ip:$port/register")
+
             .post(requestBody)
             .build()
 
@@ -53,7 +55,7 @@ class WebClient {
         """.trimIndent()
         val requestBody = jsonBody.toRequestBody("application/json".toMediaTypeOrNull())
         val request = Request.Builder()
-            .url(url + "steps")
+            .url("http://$ip:$port/" + "steps")
             .post(requestBody)
             .build()
 
