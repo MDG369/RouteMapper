@@ -24,21 +24,29 @@ class ServerConfigDialogFragment : DialogFragment() {
         val builder = AlertDialog.Builder(requireActivity())
         val inflater = requireActivity().layoutInflater
         val dialogView: View = inflater.inflate(R.layout.dialog_input, null)
-        val defaultIp = "192.168.1.49"
-        val defaultPort = "8080"
         val editTextIP = dialogView.findViewById<EditText>(R.id.editTextIP)
         val editTextPort = dialogView.findViewById<EditText>(R.id.editTextPort)
 
-        // Retrieve default values from SharedPreferences
-        // Set default values in EditText fields
-        editTextIP.setText(defaultIp)
-        editTextPort.setText(defaultPort)
+        val sharedPreferences = requireActivity().getSharedPreferences("ServerConfigPrefs", Context.MODE_PRIVATE)
+        val savedIp = sharedPreferences.getString("server_ip", "192.168.1.49")
+        val savedPort = sharedPreferences.getString("server_port", "8080")
+
+        // Set saved values in EditText fields
+        editTextIP.setText(savedIp)
+        editTextPort.setText(savedPort)
+
         builder.setView(dialogView)
             .setTitle("Server Configuration")
             .setPositiveButton("OK") { dialog, id ->
-
                 val ip = editTextIP?.text.toString()
                 val port = editTextPort?.text.toString()
+
+                // Save the input to SharedPreferences
+                with(sharedPreferences.edit()) {
+                    putString("server_ip", ip)
+                    putString("server_port", port)
+                    apply()
+                }
 
                 listener?.onServerConfigInput(ip, port)
             }

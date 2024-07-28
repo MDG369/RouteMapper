@@ -1,10 +1,14 @@
 package com.example.routemapper.map
+
 import ServerConfigDialogFragment
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.util.Log
+import android.view.View
+import android.widget.ImageView
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.core.app.ActivityCompat
@@ -19,11 +23,19 @@ import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.model.*
 import com.google.android.material.floatingactionbutton.FloatingActionButton
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.math.asin
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.ceil
+import kotlin.math.pow
 
-
-class MapActivity : AppCompatActivity(), OnMapReadyCallback,  ServerConfigDialogFragment.ServerConfigListener {
+class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogFragment.ServerConfigListener {
 
     private lateinit var mMap: GoogleMap
     private var userMarker: Marker? = null
@@ -36,6 +48,10 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback,  ServerConfigDialog
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private val DEFAULT_ZOOM: Float = 20.0F
     private var localizationStarted: Boolean = false
+    private lateinit var greenDot: ImageView
+    private var stepCount = 0;
+    private lateinit var stepCountTextView: TextView
+    private lateinit var rotationTextView: TextView
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,6 +65,10 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback,  ServerConfigDialog
 
         showServerConfigDialog()
         initStepCounter()
+        stepCountTextView = findViewById(R.id.step_count)
+        rotationTextView = findViewById(R.id.rotation)
+
+        greenDot = findViewById(R.id.green_dot)
     }
 
     private fun showServerConfigDialog() {
@@ -63,7 +83,10 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback,  ServerConfigDialog
         if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             mMap.isMyLocationEnabled = true
         } else {
-            requestPermissions(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION), LOCATION_PERMISSION_REQUEST_CODE)
+            requestPermissions(
+                arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION),
+                LOCATION_PERMISSION_REQUEST_CODE
+            )
         }
 
         getLastKnownLocation()
@@ -74,32 +97,47 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback,  ServerConfigDialog
             if (!localizationStarted) {
                 userLocation?.let { location ->
                     // Send the latitude and longitude to the server
-                    registerUser(location.latitude, location.longitude)!!
-                    Log.e("TAG", userId.toString())
+                    GlobalScope.launch(Dispatchers.Main) {
+                        userId = registerUser(location.latitude, location.longitude);
 
-                    btnCenterMap.setImageResource(R.drawable.ic_stop_button)
-                    mMap.setOnMapClickListener(null)
-                    mMap.setOnMyLocationButtonClickListener(null)
+                    }
+                        if (userId != -1) {
+                            mapperViewModel.resetCounter();
+                            updateStepCount(mapperViewModel.counterState.value);
+                            Log.e("TAG", userId.toString())
 
-                    localizationStarted = true
+                            btnCenterMap.setImageResource(R.drawable.ic_stop_button)
+                            mMap.setOnMapClickListener(null)
+                            mMap.setOnMyLocationButtonClickListener(null)
+
+                            localizationStarted = true
+                        } else {
+                            buttonStopLocalizationBehavior(btnCenterMap)
+                        }
+
+
                 }
             } else {
-                stopLocalization(userId)
-                btnCenterMap.setImageResource(R.drawable.ic_start_button)
-                userMarker?.remove()
-                userLocation = null
-                val iterator = polylines.iterator()
-                while (iterator.hasNext()) {
-                    val polyline = iterator.next()
-                    polyline.remove()
-                    iterator.remove()
-                }
-                setMapListeners(btnCenterMap)
-                localizationStarted = false
+                buttonStopLocalizationBehavior(btnCenterMap)
             }
         }
         btnCenterMap.isEnabled = false
         setMapListeners(btnCenterMap)
+    }
+
+    private fun buttonStopLocalizationBehavior(btnCenterMap: FloatingActionButton) {
+        stopLocalization(userId)
+        btnCenterMap.setImageResource(R.drawable.ic_start_button)
+        userMarker?.remove()
+        userLocation = null
+        val iterator = polylines.iterator()
+        while (iterator.hasNext()) {
+            val polyline = iterator.next()
+            polyline.remove()
+            iterator.remove()
+        }
+        setMapListeners(btnCenterMap)
+        localizationStarted = false
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -162,12 +200,16 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback,  ServerConfigDialog
                     drawPolyline(userLocation!!, newLocation)
                     mapperViewModel.incrementCounter(count)
                     userLocation = newLocation
+                    lightUpGreenDot()
+                    updateStepCount(mapperViewModel.counterState.value)
+
                 }
             }
         })
         rotationSensorDetector.registerListener(object : RotationListener {
             override fun onRotation(rotation: Float) {
                 mapperViewModel.setRotation(rotation)
+                updateRotation(mapperViewModel.rotState.value)
             }
         })
 
@@ -187,17 +229,45 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback,  ServerConfigDialog
         }
     }
 
-    private fun registerUser(lat: Double, long: Double): Int? {
-        var res: Int? = 0
-        webClient.registerUser(lat, long) { response ->
-            Log.e("TAG", "onResponse:la ${response}")
-            runOnUiThread {
-                Toast.makeText(this, response.toString() ?: "Failed to register the user", Toast.LENGTH_SHORT).show()
+    private fun updateStepCount(count: Int) {
+        stepCountTextView.text = "Steps: $count"
+    }
+
+    private fun updateRotation(rotation: Float) {
+        val factor = 10.0.pow(2).toFloat()
+        var rot = ceil(rotation * factor) / factor
+        rotationTextView.text = "Heading: $rot"
+    }
+
+
+    private fun lightUpGreenDot() {
+        greenDot.setBackgroundResource(R.drawable.green_dot)
+
+        greenDot.postDelayed({
+            greenDot.setBackgroundResource(R.drawable.gray_dot)
+        }, 500)
+
+    }
+
+    private suspend fun registerUser(lat: Double, long: Double): Int {
+        return suspendCancellableCoroutine { continuation ->
+            webClient.registerUser(lat, long) { response ->
+                Log.e("TAG", "onResponse:la ${response}")
+
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        if (response != null) response.toString() else "Failed to register the user",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+
+                val userId = if (response != null) response else -1
+                Log.e("TAG", "userId $userId")
+
+                continuation.resume(userId)
             }
-            res = response
-            userId = response!!
         }
-        return res
     }
 
     private fun postStep(userId: Int, heading: Double) {
@@ -219,21 +289,26 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback,  ServerConfigDialog
     }
 
     private fun getNewLocationFromHeading(heading: Double, distance: Double): LatLng {
-        // Earth's radius in meters
-        val earthRadius = 6378137 // Approximate value for WGS84 ellipsoid
+        // Earth's radius in meters 6378137
+        val R = 6378137 // Approximate value for WGS84 ellipsoid
+        val lat1Rad = Math.toRadians(this.userLocation!!.latitude)
+        val lon1Rad = Math.toRadians(this.userLocation!!.longitude)
 
-        // Convert heading to Cartesian coordinates
-        val dx = cos(heading) * distance
-        val dy = sin(heading) * distance
+        val lat2Rad = asin(
+            sin(lat1Rad) * cos(distance / R) +
+                    cos(lat1Rad) * sin(distance / R) * cos(heading)
+        )
 
-        // Convert offset in meters to offset in degrees (longitude and latitude)
-        val deltaLongitude = dx / (earthRadius * cos(this.userLocation!!.latitude * Math.PI / 180)) * (180 / Math.PI);
-        val deltaLatitude = dy / earthRadius * (180 / Math.PI)
+        val lon2Rad = lon1Rad + atan2(
+            sin(heading) * sin(distance / R) * cos(lat1Rad),
+            cos(distance / R) - sin(lat1Rad) * sin(lat2Rad)
+        )
 
-        val newLatitude = this.userLocation!!.latitude + deltaLatitude
-        val newLongitude = this.userLocation!!.longitude + deltaLongitude
+        val lat2 = Math.toDegrees(lat2Rad)
+        val lon2 = Math.toDegrees(lon2Rad)
 
-        return LatLng(newLatitude, newLongitude)
+        return LatLng(lat2, lon2)
+
     }
 
     private fun getLastKnownLocation() {
@@ -243,16 +318,25 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback,  ServerConfigDialog
                 .addOnSuccessListener { location ->
                     // Move the camera to the last known location if available
                     if (location != null) {
-                        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(location.latitude, location.longitude), DEFAULT_ZOOM))
+                        mMap.moveCamera(
+                            CameraUpdateFactory.newLatLngZoom(
+                                LatLng(location.latitude, location.longitude),
+                                DEFAULT_ZOOM
+                            )
+                        )
                     }
                 }
                 .addOnFailureListener { e ->
                     Toast.makeText(this, "Failed to get last known location: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
         } else {
-            requestPermissions(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION), LOCATION_PERMISSION_REQUEST_CODE)
+            requestPermissions(
+                arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION),
+                LOCATION_PERMISSION_REQUEST_CODE
+            )
         }
     }
+
     override fun onServerConfigInput(ip: String, port: String) {
         val sharedPreferences = getSharedPreferences("ServerPrefs", MODE_PRIVATE)
         val editor = sharedPreferences.edit()

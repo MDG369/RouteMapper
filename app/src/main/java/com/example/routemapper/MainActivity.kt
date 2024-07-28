@@ -8,6 +8,7 @@ import com.example.routemapper.map.MapActivity
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         val intent = Intent(this, MapActivity::class.java)
         startActivity(intent)
         // Finish the MainActivity

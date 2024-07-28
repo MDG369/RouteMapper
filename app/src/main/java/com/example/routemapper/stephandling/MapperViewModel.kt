@@ -33,6 +33,10 @@ class MapperViewModel : ViewModel() {
         msg.value = newMsg
     }
 
+    fun resetCounter() {
+        counterState.value = 0
+    }
+
     fun setRotation(rot: Float) {
         rotState.value = rot
         msg.value = "cntr: ${counterState.value}; rot: ${rotState.value}"
