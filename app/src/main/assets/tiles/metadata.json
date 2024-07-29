@@ -1,0 +1,13 @@
+{
+  "name": "first_floor_tiles",
+  "version": "1.1.0",
+  "description": "",
+  "attribution": "<a href=\"https://www.maptiler.com/engine/\">Rendered with MapTiler Engine</a>, non-commercial use only",
+  "type": "overlay",
+  "format": "png",
+  "minzoom": "17",
+  "maxzoom": "22",
+  "scale": "1.000000",
+  "bounds": [18.59412856, 54.35435406, 18.59533364, 54.35521349],
+  "profile": "mercator"
+}

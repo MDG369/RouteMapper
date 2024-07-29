@@ -15,6 +15,7 @@ import androidx.core.app.ActivityCompat
 import com.example.routemapper.*
 import com.example.routemapper.network.WebClient
 import com.example.routemapper.stephandling.*
+import com.example.routemapper.utils.LocalTileProvider
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -27,6 +28,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import java.io.File
 import kotlin.coroutines.resume
 import kotlin.math.asin
 import kotlin.math.atan2
@@ -53,7 +55,6 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogF
     private lateinit var stepCountTextView: TextView
     private lateinit var rotationTextView: TextView
 
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_map)
@@ -79,6 +80,10 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogF
 
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
+
+        val tileProvider = LocalTileProvider(this)
+        val tileOverlayOptions = TileOverlayOptions().tileProvider(tileProvider)
+        mMap.addTileOverlay(tileOverlayOptions)
 
         if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             mMap.isMyLocationEnabled = true
