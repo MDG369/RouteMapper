@@ -241,6 +241,7 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogF
     private fun updateRotation(rotation: Float) {
         val factor = 10.0.pow(2).toFloat()
         var rot = ceil(rotation * factor) / factor
+        rot *= (360/(2 * Math.PI)).toFloat();
         rotationTextView.text = "Heading: $rot"
     }
 
