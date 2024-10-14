@@ -1,4 +1,4 @@
-package com.example.routemapper.stephandling
+package com.example.routemapper.sensors.rotation
 
 interface RotationListener {
     fun onRotation(rotation: Float)

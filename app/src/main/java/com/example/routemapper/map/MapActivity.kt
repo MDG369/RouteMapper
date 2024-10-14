@@ -6,7 +6,6 @@ import android.content.pm.PackageManager
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.util.Log
-import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
@@ -14,6 +13,8 @@ import androidx.activity.viewModels
 import androidx.core.app.ActivityCompat
 import com.example.routemapper.*
 import com.example.routemapper.network.WebClient
+import com.example.routemapper.sensors.rotation.RotationListener
+import com.example.routemapper.sensors.rotation.RotationSensorDetector
 import com.example.routemapper.stephandling.*
 import com.example.routemapper.utils.LocalTileProvider
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -28,7 +29,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
-import java.io.File
 import kotlin.coroutines.resume
 import kotlin.math.asin
 import kotlin.math.atan2
@@ -36,6 +36,17 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.ceil
 import kotlin.math.pow
+import android.content.Context
+import android.net.wifi.rtt.RangingRequest
+import android.net.wifi.rtt.RangingResult
+import android.net.wifi.rtt.WifiRttManager
+import android.net.wifi.ScanResult
+import android.net.wifi.WifiManager
+import android.os.Build
+import androidx.annotation.RequiresApi
+import com.example.routemapper.sensors.manager.CombinedSensorListener
+import com.example.routemapper.sensors.manager.CombinedSensorManager
+import kotlin.random.Random
 
 class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogFragment.ServerConfigListener {
 
@@ -51,10 +62,15 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogF
     private val DEFAULT_ZOOM: Float = 20.0F
     private var localizationStarted: Boolean = false
     private lateinit var greenDot: ImageView
-    private var stepCount = 0;
     private lateinit var stepCountTextView: TextView
     private lateinit var rotationTextView: TextView
+    private lateinit var wifiRttManager: WifiRttManager
+    private lateinit var wifiManager: WifiManager
+    private lateinit var rangingRequest: RangingRequest
+    private var seed = System.currentTimeMillis()
+    private lateinit var combinedSensorManager: CombinedSensorManager
 
+    @RequiresApi(Build.VERSION_CODES.P)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_map)
@@ -70,6 +86,62 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogF
         rotationTextView = findViewById(R.id.rotation)
 
         greenDot = findViewById(R.id.green_dot)
+
+        // Check for Location Permission
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
+                LOCATION_PERMISSION_REQUEST_CODE
+            )
+        }
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.NEARBY_WIFI_DEVICES
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.NEARBY_WIFI_DEVICES),
+                LOCATION_PERMISSION_REQUEST_CODE
+            )
+        }
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_WIFI_STATE
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.ACCESS_WIFI_STATE),
+                LOCATION_PERMISSION_REQUEST_CODE
+            )
+        }
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.CHANGE_WIFI_STATE
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.CHANGE_WIFI_STATE),
+                LOCATION_PERMISSION_REQUEST_CODE
+            )
+        }
+        if (packageManager.hasSystemFeature(PackageManager.FEATURE_WIFI_RTT)) {
+            // Wi-Fi RTT is supported
+        } else {
+            // Wi-Fi RTT is not supported on this device
+            Log.e("Wi-Fi RTT", "Wi-Fi RTT is not supported on this device")
+        }
+        // Initialize Wi-Fi RTT Manager and Wi-Fi Manager
+        wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        combinedSensorManager = CombinedSensorManager(this)
+
     }
 
     private fun showServerConfigDialog() {
@@ -102,23 +174,44 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogF
             if (!localizationStarted) {
                 userLocation?.let { location ->
                     // Send the latitude and longitude to the server
-                    GlobalScope.launch(Dispatchers.Main) {
-                        userId = registerUser(location.latitude, location.longitude);
+//                    GlobalScope.launch(Dispatchers.Main) {
+//                        userId = registerUser(location.latitude, location.longitude);
+//
+//                    }
+                    userId += 1;
+                    combinedSensorManager.registerListener(object : CombinedSensorListener {
 
-                    }
-                        if (userId != -1) {
-                            mapperViewModel.resetCounter();
-                            updateStepCount(mapperViewModel.counterState.value);
-                            Log.e("TAG", userId.toString())
-
-                            btnCenterMap.setImageResource(R.drawable.ic_stop_button)
-                            mMap.setOnMapClickListener(null)
-                            mMap.setOnMyLocationButtonClickListener(null)
-
-                            localizationStarted = true
-                        } else {
-                            buttonStopLocalizationBehavior(btnCenterMap)
+                        override fun onSensorDataChanged(
+                            pressure: Float?,
+                            acceleration: FloatArray?,
+                            gravity: FloatArray?,
+                            gyroscope: FloatArray?,
+                            rotation: FloatArray?,
+                            stepsDetected: Int,
+                            lastWifiScanResults: List<ScanResult>?,
+                            lastWifi80211ScanResults: List<ScanResult>?,
+                            lastRttResults: List<RangingResult>?,
+                            lastRttLocation: LatLng?,
+                            timestamp: Long
+                        ) {
+                            combinedSensorManager.saveDataToFile(pressure, acceleration, gravity, gyroscope, rotation, stepsDetected, lastWifiScanResults, userLocation!!, timestamp,
+                                userId.toString(), seed.toString()
+                            )
                         }
+                    })
+                    if (userId != -1) {
+                        mapperViewModel.resetCounter();
+                        updateStepCount(mapperViewModel.counterState.value);
+                        Log.e("TAG", userId.toString())
+
+                        btnCenterMap.setImageResource(R.drawable.ic_stop_button)
+                        mMap.setOnMapClickListener(null)
+                        mMap.setOnMyLocationButtonClickListener(null)
+
+                        localizationStarted = true
+                    } else {
+                        buttonStopLocalizationBehavior(btnCenterMap)
+                    }
 
 
                 }
@@ -241,7 +334,7 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogF
     private fun updateRotation(rotation: Float) {
         val factor = 10.0.pow(2).toFloat()
         var rot = ceil(rotation * factor) / factor
-        rot *= (360/(2 * Math.PI)).toFloat();
+        rot *= (360 / (2 * Math.PI)).toFloat();
         rotationTextView.text = "Heading: $rot"
     }
 
@@ -281,6 +374,7 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogF
     }
 
     private fun stopLocalization(userId: Int) {
+        combinedSensorManager.unregisterListener();
 
     }
 
@@ -351,6 +445,13 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogF
         editor.apply()
         webClient.ip = ip;
         webClient.port = port
+    }
+
+
+    private fun updateUserLocationOnMap(userLocation: LatLng) {
+        userMarker?.remove() // Remove old marker if it exists
+        userMarker = mMap.addMarker(MarkerOptions().position(userLocation).title("Estimated Location"))
+        mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(userLocation, DEFAULT_ZOOM))
     }
 
     companion object {

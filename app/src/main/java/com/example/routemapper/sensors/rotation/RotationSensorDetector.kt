@@ -1,4 +1,4 @@
-package com.example.routemapper.stephandling
+package com.example.routemapper.sensors.rotation
 
 import android.content.Context
 import android.hardware.Sensor
