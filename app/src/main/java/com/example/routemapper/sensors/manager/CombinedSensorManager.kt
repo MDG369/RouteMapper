@@ -7,6 +7,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.location.LocationManager
 import android.net.MacAddress
 import android.net.wifi.rtt.RangingRequest
 import android.net.wifi.rtt.RangingResult
@@ -43,11 +44,14 @@ class CombinedSensorManager constructor(
     private var lastWifi80211ScanResults: List<ScanResult>? = null
     private var lastRttResults: List<RangingResult>? = null    // Store Wi-Fi RTT results
     private var lastRttLocation: LatLng? = null
+    private val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+    private var locationAccuracy: Float? = null  // Store location accuracy in meters
 
     private var stepsDetected: Int = 0  // Keep track of steps
-
+    private var stepsCounted: Int = 0  // Keep track of steps
+    private var initialStepCount: Float? = null
     private val handler = Handler(Looper.getMainLooper())
-    private val loggingInterval: Long = 100 // 100ms logging interval
+    private val loggingInterval: Long = 1
     private lateinit var wifiRttManager: WifiRttManager
     private lateinit var wifiManager: WifiManager
     private lateinit var rangingRequest: RangingRequest
@@ -62,15 +66,16 @@ class CombinedSensorManager constructor(
             Sensor.TYPE_GRAVITY,
             Sensor.TYPE_GYROSCOPE,
             Sensor.TYPE_ROTATION_VECTOR,
-            Sensor.TYPE_STEP_DETECTOR
+            Sensor.TYPE_STEP_DETECTOR,
         )
+        getGpsLocationAccuracy()
 
         var success = true
         sensorsToRegister.forEach { sensorType ->
             val sensor = sensorManager?.getDefaultSensor(sensorType)
             if (sensor != null) {
                 success = sensorManager?.registerListener(
-                    this, sensor, SensorManager.SENSOR_DELAY_NORMAL
+                    this, sensor, SensorManager.SENSOR_DELAY_FASTEST
                 ) ?: false
             } else {
                 Log.i("SENSOR", "No sensor found for $sensorType")
@@ -82,6 +87,23 @@ class CombinedSensorManager constructor(
         handler.postDelayed(sensorDataLogger, loggingInterval)
 
         return success
+    }
+
+
+    private fun getGpsLocationAccuracy() {
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+            ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+
+        locationManager?.requestLocationUpdates(
+            LocationManager.GPS_PROVIDER,
+            1000L,  // Minimum time interval between updates in milliseconds
+            1f      // Minimum distance between updates in meters
+        ) { location ->
+            locationAccuracy = location.accuracy
+            lastRttLocation = LatLng(location.latitude, location.longitude) // Update with GPS location
+        }
     }
 
     // Stop listening and clear resources
@@ -135,11 +157,13 @@ class CombinedSensorManager constructor(
                 lastGyroscope,
                 lastRotation,
                 stepsDetected,
+                stepsCounted,
                 lastWifiScanResults,
                 lastWifi80211ScanResults,
                 lastRttResults,
                 lastRttLocation,
-                timestamp
+                timestamp,
+                locationAccuracy
             )
 
             // Schedule the next logging run after 500ms
@@ -154,7 +178,7 @@ class CombinedSensorManager constructor(
         wifiManager.scanResults.forEachIndexed { index, scanResult ->
             Log.i("WIFI", "WIFISCAN: $scanResult")
         }
-         val scanResults =
+        val scanResults =
             wifiManager.scanResults.filter { it.is80211mcResponder }  // Only APs supporting 802.11mc (RTT)
         this.lastWifi80211ScanResults = scanResults
         // Create the RTT Request with these APs
@@ -257,39 +281,45 @@ class CombinedSensorManager constructor(
     }
 
     // Function to save sensor and Wi-Fi data to a file
-     fun saveDataToFile(
-                        pressure: Float?,
-                        acceleration: FloatArray?,
-                        gravity: FloatArray?,
-                        gyroscope: FloatArray?,
-                        rotation: FloatArray?,
-                        stepsDetected: Int,
-                        lastWifiScanResults: List<ScanResult>?,
-                        userLatLng: LatLng,
-                        timestamp: Long,
-                        file_timestamp: String,
-                        folder: String
+    fun saveDataToFile(
+        pressure: Float?,
+        acceleration: FloatArray?,
+        gravity: FloatArray?,
+        gyroscope: FloatArray?,
+        rotation: FloatArray?,
+        stepsDetected: Int,
+        stepsCounted: Int,
+        lastWifiScanResults: List<ScanResult>?,
+        userLatLng: LatLng,
+        timestamp: Long,
+        locationAccuracy: Float?,
+        file_timestamp: String,
+        folder: String
     ) {
         try {
-            context.openFileOutput("${folder}_${file_timestamp}_sensor_data.csv", Context.MODE_APPEND).use { outputStream ->
-                // Write CSV header if file is empty (optional, but you might want to check if the header is needed)
-                if (outputStream.channel.size() == 0L) {
-                    outputStream.write("Timestamp,Pressure,Acceleration,Gravity,Gyroscope,Rotation,Steps Detected,Wi-Fi Scan Results,LatLng\n".toByteArray())
-                }
+            context.openFileOutput("${folder}_${file_timestamp}_sensor_data.csv", Context.MODE_APPEND)
+                .use { outputStream ->
+                    // Write CSV header if file is empty (optional, but you might want to check if the header is needed)
+                    if (outputStream.channel.size() == 0L) {
+                        outputStream.write("Timestamp,Pressure,Acceleration,Gravity,Gyroscope,Rotation,Steps Counted,Steps Detected, LocationAccuracy, Wi-Fi Scan Results,LatLng\n".toByteArray())
+                    }
 
-                // Convert sensor data to CSV row
-                val accelData = acceleration?.joinToString(separator = "|") ?: "N/A"
-                val gravityData = gravity?.joinToString(separator = "|") ?: "N/A"
-                val gyroData = gyroscope?.joinToString(separator = "|") ?: "N/A"
-                val rotationData = rotation?.joinToString(separator = "|") ?: "N/A"
-                val wifiScanResults = lastWifiScanResults?.joinToString(separator = "|") { "${it.SSID},${it.BSSID},${it.level}" } ?: "N/A"
+                    // Convert sensor data to CSV row
+                    val accelData = acceleration?.joinToString(separator = "|") ?: "N/A"
+                    val gravityData = gravity?.joinToString(separator = "|") ?: "N/A"
+                    val gyroData = gyroscope?.joinToString(separator = "|") ?: "N/A"
+                    val rotationData = rotation?.joinToString(separator = "|") ?: "N/A"
+                    val wifiScanResults =
+                        lastWifiScanResults?.joinToString(separator = "|") { "${it.SSID},${it.BSSID},${it.level}" }
+                            ?: "N/A"
 //                val rttResults = lastRttResults?.joinToString(separator = "|") { "${it.macAddress},${it.distanceMm} mm" } ?: "N/A"
 
-                // Write data row to the CSV file
-                val dataRow = "$timestamp,$pressure,$accelData,$gravityData,$gyroData,$rotationData,$stepsDetected,$wifiScanResults,$userLatLng\n"
-                outputStream.write(dataRow.toByteArray())
-                outputStream.flush()
-            }
+                    // Write data row to the CSV file
+                    val dataRow =
+                        "$timestamp,$pressure,$accelData,$gravityData,$gyroData,$rotationData,$stepsCounted,$stepsDetected,$locationAccuracy,$wifiScanResults,$userLatLng\n"
+                    outputStream.write(dataRow.toByteArray())
+                    outputStream.flush()
+                }
         } catch (e: IOException) {
             e.printStackTrace()
         }

@@ -188,14 +188,17 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogF
                             gyroscope: FloatArray?,
                             rotation: FloatArray?,
                             stepsDetected: Int,
+                            stepsCounted: Int,
                             lastWifiScanResults: List<ScanResult>?,
                             lastWifi80211ScanResults: List<ScanResult>?,
                             lastRttResults: List<RangingResult>?,
                             lastRttLocation: LatLng?,
-                            timestamp: Long
+                            timestamp: Long,
+                            locationAccuracy: Float?,
                         ) {
-                            combinedSensorManager.saveDataToFile(pressure, acceleration, gravity, gyroscope, rotation, stepsDetected, lastWifiScanResults, userLocation!!, timestamp,
-                                userId.toString(), seed.toString()
+                            combinedSensorManager.saveDataToFile(pressure, acceleration, gravity, gyroscope, rotation, stepsDetected, stepsCounted, lastWifiScanResults, userLocation!!, timestamp,
+                                locationAccuracy,
+                            userId.toString(), seed.toString()
                             )
                         }
                     })

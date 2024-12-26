@@ -12,10 +12,12 @@ interface CombinedSensorListener {
         gyroscope: FloatArray?,
         rotation: FloatArray?,
         stepsDetected: Int,
+        stepsCounted: Int,
         lastWifiScanResults: List<ScanResult>?,
         lastWifi80211ScanResults: List<ScanResult>?,
         lastRttResults: List<RangingResult>?,
         lastRttLocation: LatLng?,
-        timestamp: Long
+        timestamp: Long,
+        locationAccuracy: Float?
     )
 }
