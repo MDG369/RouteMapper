@@ -14,6 +14,7 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
                      android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
 
     <application
             android:allowBackup="true"
@@ -25,7 +26,9 @@
             android:supportsRtl="true"
             android:theme="@style/Theme.RouteMapper"
             android:usesCleartextTraffic="true"
-            tools:targetApi="31">
+            tools:targetApi="31"
+            android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+            tools:replace="android:appComponentFactory">
 
         <meta-data
                 android:name="com.google.android.geo.API_KEY"

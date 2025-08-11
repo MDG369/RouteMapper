@@ -25,9 +25,6 @@ import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.model.*
 import com.google.android.material.floatingactionbutton.FloatingActionButton
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.math.asin
@@ -44,9 +41,14 @@ import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
 import android.os.Build
 import androidx.annotation.RequiresApi
+import com.example.routemapper.inference.ModelService
+import com.example.routemapper.inference.copyAssetsFolderToInternalStorage
 import com.example.routemapper.sensors.manager.CombinedSensorListener
 import com.example.routemapper.sensors.manager.CombinedSensorManager
-import kotlin.random.Random
+import org.pytorch.Module
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 
 class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogFragment.ServerConfigListener {
 
@@ -69,6 +71,9 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogF
     private lateinit var rangingRequest: RangingRequest
     private var seed = System.currentTimeMillis()
     private lateinit var combinedSensorManager: CombinedSensorManager
+    private lateinit var modelService: ModelService
+    private lateinit var model: Module
+    private val inputQueue: ArrayDeque<FloatArray> = ArrayDeque()
 
     @RequiresApi(Build.VERSION_CODES.P)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -86,8 +91,76 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogF
         rotationTextView = findViewById(R.id.rotation)
 
         greenDot = findViewById(R.id.green_dot)
-
         // Check for Location Permission
+        checkPermissions()
+        if (packageManager.hasSystemFeature(PackageManager.FEATURE_WIFI_RTT)) {
+            // Wi-Fi RTT is supported
+        } else {
+            // Wi-Fi RTT is not supported on this device
+            Log.e("Wi-Fi RTT", "Wi-Fi RTT is not supported on this device")
+        }
+        // Initialize Wi-Fi RTT Manager and Wi-Fi Manager
+        wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        combinedSensorManager = CombinedSensorManager(this)
+
+        // Copy CSV from assets to internal storage if not already there
+        copyAssetsFolderToInternalStorage(this, "data_folder")
+
+        // Create an instance of ModelService
+        val modelService = ModelService(windowSize = 160, sampleLeeway = 10)
+
+        // Load model from assets
+        val model = modelService.loadModel(this, "LSTM_model_quantized.ptl")
+
+        // Load CSV data
+        modelService.runInferenceOnFolder(this, model, "data_folder", "results_folder")
+
+//        // Run inference and save predictions
+//
+//        // Lista do przechowywania czasów wykonania
+//        val executionTimes = mutableListOf<Double>()
+//
+//// Wykonaj 5 razy
+//        repeat(5) { iteration ->
+//            val startTime = System.nanoTime()
+//            modelService.runWindowedInference(this, model, features, labels, "predictions_${iteration + 1}.csv")
+//            val endTime = System.nanoTime()
+//            val durationMs = (endTime - startTime) / 1_000_000.0  // Konwersja na milisekundy
+//            executionTimes.add(durationMs)
+//            Log.d("InferenceTime", "Iteracja ${iteration + 1}: $durationMs ms")
+//        }
+//
+//// Oblicz średnią
+//        val averageTime = executionTimes.average()
+//        Log.d("InferenceTime", "Średni czas wykonania: $averageTime ms")
+//        Log.d("InferenceTime", "Wszystkie pomiary: ${executionTimes.joinToString()} ms")
+//
+//// Log gdzie zostały zapisane pliki z przewidywaniami
+//        for (i in 1..5) {
+//            val outFile = File(filesDir, "predictions_$i.csv")
+//            Log.d("LSTM", "Przewidywania zapisane do: ${outFile.absolutePath}")
+//        }
+
+
+    }
+
+    private fun copyAssetToInternalStorage(filename: String) {
+        val outFile = File(filesDir, filename)
+        if (outFile.exists()) return
+
+        try {
+            assets.open(filename).use { input ->
+                FileOutputStream(outFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            Log.d("LSTM", "Copied $filename to internal storage.")
+        } catch (e: IOException) {
+            Log.e("LSTM", "Failed to copy asset file: $filename", e)
+        }
+    }
+
+    private fun checkPermissions() {
         if (ActivityCompat.checkSelfPermission(
                 this,
                 Manifest.permission.ACCESS_FINE_LOCATION
@@ -132,16 +205,6 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogF
                 LOCATION_PERMISSION_REQUEST_CODE
             )
         }
-        if (packageManager.hasSystemFeature(PackageManager.FEATURE_WIFI_RTT)) {
-            // Wi-Fi RTT is supported
-        } else {
-            // Wi-Fi RTT is not supported on this device
-            Log.e("Wi-Fi RTT", "Wi-Fi RTT is not supported on this device")
-        }
-        // Initialize Wi-Fi RTT Manager and Wi-Fi Manager
-        wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-        combinedSensorManager = CombinedSensorManager(this)
-
     }
 
     private fun showServerConfigDialog() {
@@ -149,6 +212,9 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogF
         dialogFragment.show(supportFragmentManager, "serverConfigDialog")
     }
 
+    private fun performInference(data: List<FloatArray>) {
+
+    }
 
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
@@ -200,6 +266,9 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogF
                                 locationAccuracy,
                             userId.toString(), seed.toString()
                             )
+                            Log.i("CombinedSensorManager", "Acceleration: ${acceleration?.contentToString()}, Gyroscope: ${gyroscope?.contentToString()}")
+                            performInference(listOf(acceleration, gyroscope) as List<FloatArray>)
+
                         }
                     })
                     if (userId != -1) {
