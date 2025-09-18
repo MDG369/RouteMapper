@@ -45,6 +45,7 @@ import com.example.routemapper.inference.ModelService
 import com.example.routemapper.inference.copyAssetsFolderToInternalStorage
 import com.example.routemapper.sensors.manager.CombinedSensorListener
 import com.example.routemapper.sensors.manager.CombinedSensorManager
+import com.example.routemapper.stephandling.lstm.LSTMStepDetector
 import org.pytorch.Module
 import java.io.File
 import java.io.FileOutputStream
@@ -74,6 +75,8 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogF
     private lateinit var modelService: ModelService
     private lateinit var model: Module
     private val inputQueue: ArrayDeque<FloatArray> = ArrayDeque()
+    private lateinit var lstmStepDetector: LSTMStepDetector
+
 
     @RequiresApi(Build.VERSION_CODES.P)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -104,16 +107,16 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogF
         combinedSensorManager = CombinedSensorManager(this)
 
         // Copy CSV from assets to internal storage if not already there
-        copyAssetsFolderToInternalStorage(this, "data_folder")
+//        copyAssetsFolderToInternalStorage(this, "data_folder")
 
         // Create an instance of ModelService
-        val modelService = ModelService(windowSize = 160, sampleLeeway = 10)
+//        val modelService = ModelService(windowSize = 160, sampleLeeway = 10)
 
         // Load model from assets
-        val model = modelService.loadModel(this, "LSTM_model_quantized.ptl")
+//        val model = modelService.loadModel(this, "LSTM_model_quantized.ptl")
 
         // Load CSV data
-        modelService.runInferenceOnFolder(this, model, "data_folder", "results_folder")
+//        modelService.runInferenceOnFolder(this, model, "data_folder", "results_folder")
 
 //        // Run inference and save predictions
 //
@@ -266,8 +269,8 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogF
                                 locationAccuracy,
                             userId.toString(), seed.toString()
                             )
-                            Log.i("CombinedSensorManager", "Acceleration: ${acceleration?.contentToString()}, Gyroscope: ${gyroscope?.contentToString()}")
-                            performInference(listOf(acceleration, gyroscope) as List<FloatArray>)
+//                            Log.i("CombinedSensorManager", "Acceleration: ${acceleration?.contentToString()}, Gyroscope: ${gyroscope?.contentToString()}")
+//                            performInference(listOf(acceleration, gyroscope) as List<FloatArray>)
 
                         }
                     })
@@ -357,14 +360,18 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogF
     }
 
     private fun initStepCounter() {
-        val stepSensorDetector = StepSensorDetector(this@MapActivity)
+        // Załaduj model LSTM
+        val modelService = ModelService(windowSize = 160, sampleLeeway = 10)
+        val model = modelService.loadModel(this, "LSTMmodel.ptl")
+
+        // Utwórz detektor kroków oparty na LSTM
+        val lstmStepDetector = LSTMStepDetector(this@MapActivity, model)
         val rotationSensorDetector = RotationSensorDetector(this@MapActivity)
 
-        val availableStepDetector = stepSensorDetector.registerListener(object : StepListener {
+        val availableStepDetector = lstmStepDetector.registerListener(object : StepListener {
             override fun onStep(count: Int) {
                 if (localizationStarted) {
                     val lastHeading = rotationSensorDetector.getLastHeading()
-//                    stepSensorDetector.saveStepToFile(0, lastHeading)
                     val newLocation = getNewLocationFromHeading(lastHeading, 0.5)
                     postStep(userId, lastHeading)
                     drawPolyline(userLocation!!, newLocation)
@@ -372,10 +379,10 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogF
                     userLocation = newLocation
                     lightUpGreenDot()
                     updateStepCount(mapperViewModel.counterState.value)
-
                 }
             }
         })
+
         rotationSensorDetector.registerListener(object : RotationListener {
             override fun onRotation(rotation: Float) {
                 mapperViewModel.setRotation(rotation)
@@ -389,14 +396,16 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogF
             if (error.isNotEmpty()) {
                 error += "\n\n"
                 mapperViewModel.setMsg(error)
-
                 Log.i("Main", error)
             } else {
-                mapperViewModel.setMsg("not available")
+                mapperViewModel.setMsg("Model LSTM step detector not available")
             }
         } else {
-            mapperViewModel.setMsg("initialized successful")
+            mapperViewModel.setMsg("LSTM step detector initialized successfully")
         }
+
+        // Zapisz referencję do detektora, aby móc go wyłączyć przy zatrzymaniu lokalizacji
+        this.lstmStepDetector = lstmStepDetector
     }
 
     private fun updateStepCount(count: Int) {
@@ -446,8 +455,10 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, ServerConfigDialogF
     }
 
     private fun stopLocalization(userId: Int) {
-        combinedSensorManager.unregisterListener();
-
+        combinedSensorManager.unregisterListener()
+        if (::lstmStepDetector.isInitialized) {
+            lstmStepDetector.unregisterListener()
+        }
     }
 
     private fun drawPolyline(previousLocation: LatLng, location: LatLng) {
